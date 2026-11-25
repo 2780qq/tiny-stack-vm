@@ -27,7 +27,7 @@ POP[0x50] = 1; POP[0x51] = 1; PSH[0x52] = 1; POP[0x53] = 1;
 function run(P: Uint8Array, IN: Uint8Array): { o: Uint8Array; e: number } {
   const n = P.length, D = new Int32Array(SM), C = new Int32Array(CM), M = new Int32Array(MM);
   let sp = 0, cp = 0, ip = 0, pc = 0, st = 0;
-  const O = new Uint8Array(OL), e8 = new TextEncoder();
+  const O = new Uint8Array(OL), T = new Uint8Array(10);
   let ol = 0;
   const done = (e: number) => ({ o: O.slice(0, ol), e });
   for (;;) {
@@ -97,9 +97,16 @@ function run(P: Uint8Array, IN: Uint8Array): { o: Uint8Array; e: number } {
       case 0x40: { const a = D[sp - 1]; if (a < 0 || a >= MM) return done(6); D[sp - 1] = M[a]; break; }
       case 0x41: { const a = D[sp - 1], v = D[sp - 2]; if (a < 0 || a >= MM) return done(6); sp -= 2; M[a] = v; break; }
       case 0x50: {
-        const by = e8.encode(String(D[sp - 1]));
-        if (ol + by.length > OL) return done(11);
-        sp--; O.set(by, ol); ol += by.length;
+        // PRINT writes v in decimal ASCII: a leading '-' when negative, no padding, no newline.
+        // Writes into a scratch buffer first, so a value that would pass the limit writes none of its bytes.
+        let v = D[sp - 1], L = 0, neg = false;
+        if (v < 0) { neg = true; v = -v; }
+        do { T[L++] = v % 10; v = (v - (v % 10)) / 10; } while (v !== 0);
+        const len = L + (neg ? 1 : 0);
+        if (ol + len > OL) return done(11);
+        sp--;
+        if (neg) O[ol++] = 45;
+        while (L > 0) O[ol++] = 48 + T[--L];
         break;
       }
       case 0x51: if (ol + 1 > OL) return done(11); O[ol++] = D[--sp] & 255; break;
